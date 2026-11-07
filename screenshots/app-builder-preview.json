@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "SÂN 24",
+      "hasCanvas": false,
+      "bodyTextLen": 182,
+      "bodyTextHash": "dc14aa76304bee4b73739918d15460bbb3e996ae64ab9ea9c219902fb6aa53a1",
+      "bodyTextPrefix": "SÂN 24 Bóng đá thế giới · giờ Việt Nam 0 đang đá Toàn cầu Thứ 7,",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "SÂN 24",
+      "hasCanvas": false,
+      "bodyTextLen": 182,
+      "bodyTextHash": "dc14aa76304bee4b73739918d15460bbb3e996ae64ab9ea9c219902fb6aa53a1",
+      "bodyTextPrefix": "SÂN 24 Bóng đá thế giới · giờ Việt Nam 0 đang đá Toàn cầu Thứ 7,",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

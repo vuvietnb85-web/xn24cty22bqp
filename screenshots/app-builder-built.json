@@ -1,0 +1,41 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "SÂN 24",
+      "hasCanvas": false,
+      "bodyTextLen": 2051,
+      "bodyTextHash": "23921c180c4b60c8e19e78a3c52d38831dec9bb45921f1a87ab5590a41ffe455",
+      "bodyTextPrefix": "SÂN 24 Bóng đá thế giới · giờ Việt Nam 05:13:12 0 đang đá Toàn c",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "SÂN 24",
+      "hasCanvas": false,
+      "bodyTextLen": 2057,
+      "bodyTextHash": "fe69b610b4cfcaf565ebb0b1682fbcd9a514f2d8da7b0bbe65e7c02400c63b6e",
+      "bodyTextPrefix": "SÂN 24 Bóng đá thế giới · giờ Việt Nam 05:13:13 0 đang đá Toàn c",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text changed (182 -> 2051 chars, hash mismatch)",
+    "mobile: body text changed (182 -> 2057 chars, hash mismatch)"
+  ]
+}
