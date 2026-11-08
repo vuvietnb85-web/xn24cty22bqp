@@ -61,9 +61,42 @@
   animation: san-pulse 0.6s ease-in-out 3;
 }
 
+@keyframes momo-spark {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.55);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.momo-spark {
+  animation: momo-spark 1.6s ease-in-out infinite;
+}
+
+@keyframes momo-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  45%,
+  55% {
+    opacity: 0.08;
+  }
+}
+
+.momo-blink {
+  animation: momo-blink 1.6s ease-in-out 5;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .live-dot,
-  .score-flash {
+  .score-flash,
+  .momo-spark,
+  .momo-blink {
     animation: none;
   }
 }

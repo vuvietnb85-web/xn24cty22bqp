@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { apiUrl } from "@/lib/api-url";
 import type { TrumpTick } from "@/lib/football/types";
+import { PaypalBonus } from "@/components/pitch/bonus";
+import { MomoSticker } from "@/components/pitch/momo";
+
+const GameGate = lazy(() => import("@/components/pitch/games/board").then((mod) => ({ default: mod.GameGate })));
 
 type Drag = { dx: number; dy: number; ox: number; oy: number; moved: boolean };
 
@@ -44,6 +48,9 @@ export function TrumpSticker() {
   const [tick, setTick] = useState<TrumpTick | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  const [games, setGames] = useState(false);
+  const [bonus, setBonus] = useState(false);
+  const [momo, setMomo] = useState(0);
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
   const [pos, setPos] = useState<Pos | null>(null);
   const prev = useRef<number | null>(null);
@@ -90,6 +97,25 @@ export function TrumpSticker() {
   const place = pos;
 
   const suppressClick = useRef(false);
+  const taps = useRef(0);
+  const lastTap = useRef(0);
+  const tapTimer = useRef(0);
+
+  useEffect(() => () => window.clearTimeout(tapTimer.current), []);
+
+  useEffect(() => {
+    const lift = () => {
+      setPos((current) => {
+        const y = current?.y ?? window.innerHeight - 168;
+        if (y < window.innerHeight * 0.46) return current;
+        const next = { x: current?.x ?? Math.max(8, window.innerWidth - 92), y: 8 };
+        localStorage.setItem(KEY, JSON.stringify(next));
+        return next;
+      });
+    };
+    window.addEventListener("san24-game-open", lift);
+    return () => window.removeEventListener("san24-game-open", lift);
+  }, []);
 
   const onPointerDown = (e: ReactPointerEvent) => {
     const el = e.currentTarget as HTMLElement;
@@ -117,6 +143,7 @@ export function TrumpSticker() {
   };
 
   return (
+    <>
     <div
       className="fixed z-50 touch-none"
       style={place ? { left: place.x, top: place.y } : { right: 12, bottom: 96 }}
@@ -128,7 +155,20 @@ export function TrumpSticker() {
           suppressClick.current = false;
           return;
         }
-        setOpen((v) => !v);
+        const now = performance.now();
+        taps.current = now - lastTap.current <= 450 ? taps.current + 1 : 1;
+        lastTap.current = now;
+        window.clearTimeout(tapTimer.current);
+        if (taps.current >= 3) {
+          taps.current = 0;
+          setOpen(false);
+          setGames(true);
+          return;
+        }
+        tapTimer.current = window.setTimeout(() => {
+          taps.current = 0;
+          setOpen((value) => !value);
+        }, 460);
       }}
     >
       <button
@@ -158,8 +198,29 @@ export function TrumpSticker() {
             <dt className="text-muted">Khối</dt>
             <dd className="text-right text-fg">{compact(tick.quoteVolume)}</dd>
           </dl>
+          <p className="mt-2 text-xs text-muted">Chạm nhanh 3 lần để mở cờ vua, cờ tướng và Sudoku.</p>
         </div>
       ) : null}
     </div>
+    {games ? (
+      <Suspense fallback={<p className="fixed inset-x-0 top-16 z-[80] text-center text-sm text-gold">Đang mở bàn cờ…</p>}>
+        <GameGate
+          onClose={() => {
+            setGames(false);
+            setBonus(true);
+          }}
+        />
+      </Suspense>
+    ) : null}
+    {bonus ? (
+      <PaypalBonus
+        onClose={() => {
+          setBonus(false);
+          setMomo((n) => n + 1);
+        }}
+      />
+    ) : null}
+    {momo > 0 ? <MomoSticker key={momo} onDone={() => setMomo(0)} /> : null}
+    </>
   );
 }

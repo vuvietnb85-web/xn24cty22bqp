@@ -1,16 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { Pause, Play, Radio } from "lucide-react";
+import { Pause, Play, Plus, Minus, Radio } from "lucide-react";
 import { apiUrl } from "@/lib/api-url";
 import { AIR_CHANNELS, mbPerHour, type AirChannel } from "@/lib/air/catalog";
 import { VTV_CHANNELS } from "@/lib/air/vtv";
-import { engageTone } from "@/lib/air/tone";
+import { engageTone, holdTone } from "@/lib/air/tone";
 
 type Extra = { name: string; src: string; kbps: number; codec: string; country?: string; hls?: boolean };
 
 const SAVE_KEY = "san24-air-save";
 const TONE_KEY = "san24-air-tone";
+const FRAME_KEY = "san24-air-frame";
 const HEAVY_KBPS = 700;
+const MIN_W = 112;
+
+type Frame = { x: number; y: number; w: number };
+
+function clampFrame(frame: Frame): Frame {
+  const limit = Math.min(720, Math.max(MIN_W, window.innerWidth - 16));
+  const w = Math.min(Math.max(MIN_W, frame.w), limit);
+  const h = (w * 9) / 16;
+  const x = Math.min(Math.max(frame.x, 24 - w), window.innerWidth - 64);
+  const y = Math.min(Math.max(frame.y, 24 - h), window.innerHeight - 64);
+  return { x, y, w };
+}
+
+function defaultFrame(): Frame {
+  return clampFrame({ x: 12, y: window.innerHeight - 188, w: 148 });
+}
 
 function formatKb(usedBytes: number): string {
   if (usedBytes < 1024 * 1024) return `${Math.max(1, Math.round(usedBytes / 1024))} KB`;
@@ -57,7 +74,14 @@ export function AirDeck() {
   const [mounted, setMounted] = useState(false);
   const [processed, setProcessed] = useState(false);
   const [vtvBusy, setVtvBusy] = useState("");
+  const [frame, setFrame] = useState<Frame | null>(null);
   const rateRef = useRef(0);
+  const wantPlay = useRef(false);
+  const resumeTries = useRef(0);
+  const frameRef = useRef<Frame | null>(null);
+  const dragRef = useRef<{ kind: "move" | "size"; px: number; py: number; x: number; y: number; w: number } | null>(null);
+  const pinchRef = useRef<{ dist: number; w: number; x: number; y: number } | null>(null);
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
     setMounted(true);
@@ -65,6 +89,12 @@ export function AirDeck() {
     if (localStorage.getItem(TONE_KEY) === "0") setTone(false);
     const link = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
     if (link?.saveData) setSave(true);
+    try {
+      const raw = localStorage.getItem(FRAME_KEY);
+      setFrame(raw ? clampFrame(JSON.parse(raw) as Frame) : defaultFrame());
+    } catch {
+      setFrame(defaultFrame());
+    }
   }, []);
 
   useEffect(() => {
@@ -74,6 +104,32 @@ export function AirDeck() {
   useEffect(() => {
     localStorage.setItem(TONE_KEY, tone ? "1" : "0");
   }, [tone]);
+
+  useEffect(() => {
+    if (!frame) return;
+    frameRef.current = frame;
+    localStorage.setItem(FRAME_KEY, JSON.stringify(frame));
+  }, [frame]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setFrame((currentFrame) => (currentFrame ? clampFrame(currentFrame) : currentFrame));
+    };
+    window.addEventListener("resize", onResize);
+    const lift = () => {
+      setFrame((currentFrame) => {
+        if (!currentFrame) return currentFrame;
+        const height = (currentFrame.w * 9) / 16;
+        if (currentFrame.y + height < window.innerHeight * 0.48) return currentFrame;
+        return clampFrame({ ...currentFrame, y: 8 });
+      });
+    };
+    window.addEventListener("san24-game-open", lift);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("san24-game-open", lift);
+    };
+  }, []);
 
   useEffect(() => {
     let stop = false;
@@ -111,13 +167,37 @@ export function AirDeck() {
   }, []);
 
   useEffect(() => {
-    const onHide = () => {
+    const onPause = () => {
+      if (!document.hidden || !wantPlay.current || resumeTries.current >= 2) return;
+      resumeTries.current += 1;
       const video = activeRef.current;
-      if (document.hidden && video && !video.paused) video.pause();
+      if (!video) return;
+      void holdTone();
+      void video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     };
-    document.addEventListener("visibilitychange", onHide);
-    return () => document.removeEventListener("visibilitychange", onHide);
-  }, []);
+    const onVis = () => {
+      if (!document.hidden) resumeTries.current = 0;
+      void holdTone();
+      const video = activeRef.current;
+      if (!video) return;
+      if (document.hidden) {
+        if (!video.paused && "mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+        return;
+      }
+      if (wantPlay.current && video.paused) {
+        void video.play().then(() => setPlaying(true)).catch(() => setNote("Mở khóa rồi chạm phát nếu máy đã cắt tiếng."));
+      }
+    };
+    const videos = [rawRef.current, toneRef.current];
+    for (const video of videos) video?.addEventListener("pause", onPause);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pageshow", onVis);
+    return () => {
+      for (const video of videos) video?.removeEventListener("pause", onPause);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pageshow", onVis);
+    };
+  }, [frame]);
 
   useEffect(() => {
     return () => {
@@ -126,6 +206,8 @@ export function AirDeck() {
   }, []);
 
   const stopMedia = () => {
+    wantPlay.current = false;
+    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "none";
     hlsRef.current?.destroy();
     hlsRef.current = null;
     for (const video of [rawRef.current, toneRef.current]) {
@@ -184,10 +266,16 @@ export function AirDeck() {
       void video
         .play()
         .then(async () => {
+          wantPlay.current = true;
           setPlaying(true);
           if (useTone) await engageTone(video, true);
           if ("mediaSession" in navigator) {
-            navigator.mediaSession.metadata = new MediaMetadata({ title: channel.name, artist: "SÂN 24" });
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: channel.name,
+              artist: "SÂN 24",
+              album: "Phát khi tắt màn hình",
+            });
+            navigator.mediaSession.playbackState = "playing";
           }
         })
         .catch(() => setError("Trình duyệt chặn phát. Chạm nút phát trên khung sóng."));
@@ -283,11 +371,109 @@ export function AirDeck() {
       setOpen(true);
       return;
     }
-    if (video.paused) void video.play().then(() => setPlaying(true));
-    else {
+    if (video.paused) {
+      wantPlay.current = true;
+      void video.play().then(() => {
+        setPlaying(true);
+        if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+      });
+    } else {
+      wantPlay.current = false;
       video.pause();
       setPlaying(false);
+      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
     }
+  };
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    const play = () => {
+      const video = activeRef.current;
+      if (!video) return;
+      wantPlay.current = true;
+      void video.play().then(() => {
+        setPlaying(true);
+        session.playbackState = "playing";
+      });
+    };
+    const pause = () => {
+      wantPlay.current = false;
+      activeRef.current?.pause();
+      setPlaying(false);
+      session.playbackState = "paused";
+    };
+    try {
+      session.setActionHandler("play", play);
+      session.setActionHandler("pause", pause);
+      session.setActionHandler("stop", () => {
+        wantPlay.current = false;
+        stopMedia();
+      });
+    } catch {
+      /* máy không nhận nút khóa màn hình */
+    }
+    return () => {
+      try {
+        session.setActionHandler("play", null);
+        session.setActionHandler("pause", null);
+        session.setActionHandler("stop", null);
+      } catch {
+        /* bỏ qua */
+      }
+    };
+    // stopMedia đổi theo render; handler đọc ref nên chỉ gắn một lần
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const place = (next: Frame) => {
+    const clamped = clampFrame(next);
+    frameRef.current = clamped;
+    setFrame(clamped);
+  };
+
+  const onFrameDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* vẫn kéo được khi trình duyệt không giữ con trỏ */
+    }
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const base = frameRef.current;
+    if (!base) return;
+    if (pointersRef.current.size >= 2) {
+      const [a, b] = [...pointersRef.current.values()];
+      pinchRef.current = { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), w: base.w, x: base.x, y: base.y };
+      dragRef.current = null;
+      return;
+    }
+    const resize = (event.target as HTMLElement).dataset.resize === "1";
+    dragRef.current = { kind: resize ? "size" : "move", px: event.clientX, py: event.clientY, x: base.x, y: base.y, w: base.w };
+  };
+
+  const onFrameMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const point = pointersRef.current.get(event.pointerId);
+    if (point) {
+      point.x = event.clientX;
+      point.y = event.clientY;
+    }
+    if (pointersRef.current.size >= 2 && pinchRef.current) {
+      const [a, b] = [...pointersRef.current.values()];
+      const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+      place({ x: pinchRef.current.x, y: pinchRef.current.y, w: pinchRef.current.w * (dist / pinchRef.current.dist) });
+      return;
+    }
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (drag.kind === "move") place({ x: drag.x + event.clientX - drag.px, y: drag.y + event.clientY - drag.py, w: drag.w });
+    else place({ x: drag.x, y: drag.y, w: drag.w + event.clientX - drag.px });
+  };
+
+  const onFrameUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointersRef.current.delete(event.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    dragRef.current = null;
   };
 
   return (
@@ -304,8 +490,16 @@ export function AirDeck() {
       {mounted
         ? createPortal(
             <>
-              <div className="fixed bottom-24 left-3 z-40 flex items-center gap-2">
-                <div className="relative h-16 w-28 overflow-hidden rounded-xl border border-gold bg-surface shadow-lg">
+              {frame ? (
+              <div
+                className="fixed z-[45] touch-none"
+                style={{ left: frame.x, top: frame.y, width: frame.w }}
+                onPointerDown={onFrameDown}
+                onPointerMove={onFrameMove}
+                onPointerUp={onFrameUp}
+                onPointerCancel={onFrameUp}
+              >
+                <div className="relative overflow-hidden rounded-xl border border-gold bg-surface shadow-lg" style={{ height: Math.round((frame.w * 9) / 16) }}>
                   <video ref={rawRef} playsInline className={"h-full w-full object-cover " + (processed ? "hidden" : "")} />
                   <video
                     ref={toneRef}
@@ -315,28 +509,41 @@ export function AirDeck() {
                   />
                   {!current?.picture ? (
                     <span className="pointer-events-none absolute inset-0 grid place-items-center bg-bg/80 font-display text-sm tracking-widest text-gold">
-                      {current ? current.name.slice(0, 8) : "SÓNG"}
+                      {current ? current.name.slice(0, 10) : "SÓNG"}
                     </span>
                   ) : null}
+                  {current ? (
+                    <p className="pointer-events-none absolute bottom-1 left-10 right-8 truncate text-[10px] font-semibold text-gold-soft">
+                      {current.name}
+                      {levelKbps ? ` · ${levelKbps}` : ""} · {formatKb(used)}
+                    </p>
+                  ) : null}
+                  <div className="absolute left-1 top-1 flex gap-1">
+                    <button type="button" onClick={() => frame && place({ ...frame, w: frame.w - 48 })} className="grid size-8 place-items-center rounded-full bg-bg/80 text-gold" aria-label="Thu nhỏ màn phát">
+                      <Minus className="size-3" />
+                    </button>
+                    <button type="button" onClick={() => frame && place({ ...frame, w: frame.w + 64 })} className="grid size-8 place-items-center rounded-full bg-bg/80 text-gold" aria-label="Phóng to màn phát">
+                      <Plus className="size-3" />
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={toggle}
-                    className="absolute bottom-1 right-1 grid size-8 place-items-center rounded-full bg-bg/80 text-gold"
+                    className="absolute bottom-1 left-1 grid size-8 place-items-center rounded-full bg-bg/80 text-gold"
                     aria-label={playing ? "Tạm dừng sóng" : "Phát sóng"}
                   >
                     {playing ? <Pause className="size-3" /> : <Play className="size-3" />}
                   </button>
+                  <span
+                    data-resize="1"
+                    className="absolute bottom-0 right-0 size-8 cursor-nwse-resize"
+                    aria-hidden="true"
+                  >
+                    <span className="absolute bottom-1 right-1 size-3 border-b-2 border-r-2 border-gold" />
+                  </span>
                 </div>
-                {current ? (
-                  <div className="max-w-36">
-                    <p className="truncate text-xs font-semibold text-fg">{current.name}</p>
-                    <p className="text-xs text-muted">
-                      {levelKbps ? `${levelKbps} kb/s` : "đang nối"} · {formatKb(used)}
-                      {processed ? " · ấm" : ""}
-                    </p>
-                  </div>
-                ) : null}
               </div>
+              ) : null}
 
               {open ? (
                 <div className="fixed inset-0 z-40 overflow-y-auto bg-bg px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))]">
@@ -348,7 +555,7 @@ export function AirDeck() {
                       </button>
                     </div>
                     <p className="text-sm text-muted">
-                      Dò luồng công khai, khóa mức thấp trước khi phát. Khung góc dưới vẫn chạy khi bạn xem tỉ số.
+                      Kéo khung phát để đổi chỗ. Nút cộng trừ, hai ngón hoặc góc phải dưới để phóng. Tắt màn hình vẫn phát.
                     </p>
                     <input
                       value={query}

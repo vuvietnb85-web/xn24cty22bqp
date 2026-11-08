@@ -3,3 +3,15 @@ node_modules/
 .github_repo
 .env
 .env.*
+
+# build / cache / logs / tool metadata
+.vercel/
+.tanstack/
+.output/
+dist/
+.grok/
+screenshots/
+attachments/
+artifacts/
+.node_modules.lock
+*.log
