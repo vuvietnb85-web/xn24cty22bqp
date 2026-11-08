@@ -51,6 +51,15 @@ function build(el: HTMLMediaElement): Chain {
   return { ctx, makeup, shelves, comp, limit };
 }
 
+export async function holdTone(): Promise<void> {
+  if (!chain || chain.ctx.state !== "suspended") return;
+  try {
+    await chain.ctx.resume();
+  } catch {
+    /* máy khóa có thể giữ im cho đến khi mở màn hình */
+  }
+}
+
 export async function engageTone(el: HTMLMediaElement, on: boolean): Promise<void> {
   if (bound !== el) {
     chain = build(el);
